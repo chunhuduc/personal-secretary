@@ -9,17 +9,31 @@ whenever it needs to consult the message log.
 
 ## Architecture
 
-```
-Telegram Bot (privacy OFF)
-  -> setWebhook (with secret_token)
-  -> Vercel /api/telegram-webhook (Node.js, googleapis JWT)
-      -> verify X-Telegram-Bot-Api-Secret-Token header
-      -> read "config" tab -> is chat_id whitelisted?
-      -> if control command from admin -> mutate "config" tab
-      -> else append row to "log" tab
-      -> 200 OK
-  -> Google Sheet (log + config tabs)
-  -> Claude reads via Google Drive MCP (read_file_content / search_files)
+```mermaid
+flowchart TD
+    TG["Telegram Bot<br/>(privacy OFF, in whitelisted chats)"]
+    TG -- "setWebhook (secret_token)" --> WH
+
+    subgraph Vercel["Vercel /api/telegram-webhook (Node.js, googleapis JWT)"]
+        WH["Receive POST update"]
+        VERIFY{"Valid<br/>X-Telegram-Bot-Api-<br/>Secret-Token?"}
+        WH --> VERIFY
+        VERIFY -- "no" --> R401["401 Unauthorized"]
+        VERIFY -- "yes" --> READCFG["Read 'config' tab whitelist"]
+        READCFG --> BRANCH{"Message type?"}
+        BRANCH -- "admin control cmd<br/>(/allow /deny /list)" --> MUTATE["Mutate 'config' tab"]
+        BRANCH -- "whitelisted chat" --> APPEND["Append row to 'log' tab"]
+        BRANCH -- "not whitelisted" --> IGNORE["Ignore"]
+        MUTATE --> OK["200 OK"]
+        APPEND --> OK
+        IGNORE --> OK
+    end
+
+    APPEND --> SHEET
+    MUTATE --> SHEET
+
+    SHEET["Google Sheet<br/>log tab + config tab"]
+    SHEET --> CLAUDE["Claude / Claude Code<br/>reads via Google Drive MCP<br/>(read_file_content / search_files)"]
 ```
 
 ## Setup
