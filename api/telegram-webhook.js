@@ -10,6 +10,8 @@
 //   4. Always respond 200 quickly - Telegram retries on non-200.
 
 import { appendLog } from '../lib/sheets.js';
+import { embed } from '../lib/embeddings.js';
+import { insertMessage } from '../lib/db.js';
 
 function extractMessage(body) {
   return body?.message || body?.edited_message || body?.channel_post || null;
@@ -45,14 +47,40 @@ export default async function handler(req, res) {
       return;
     }
 
+    const timestampIso = new Date().toISOString();
+    const chatName = chatDisplayName(message.chat);
+    const sender = senderDisplayName(message.from);
+    const text = message.text || message.caption || '';
+
     await appendLog({
-      timestampIso: new Date().toISOString(),
+      timestampIso,
       chatId: message.chat.id,
-      chatName: chatDisplayName(message.chat),
-      sender: senderDisplayName(message.from),
-      text: message.text || message.caption || '',
+      chatName,
+      sender,
+      text,
       rawDateUnix: message.date,
     });
+
+    // Best-effort: embed + index into Neon for semantic retrieval.
+    // Must never block the Sheet write or the 200 response (free-tier Sheet
+    // sync stays independent of the RAG layer).
+    try {
+      if (text.trim()) {
+        const embedding = await embed(text);
+        await insertMessage({
+          ownerId: process.env.OWNER_ID,
+          chatId: message.chat.id,
+          chatName,
+          sender,
+          text,
+          ts: timestampIso,
+          rawDateUnix: message.date,
+          embedding,
+        });
+      }
+    } catch (err) {
+      console.error('rag index (non-fatal):', err);
+    }
 
     res.status(200).json({ ok: true, logged: true });
   } catch (err) {

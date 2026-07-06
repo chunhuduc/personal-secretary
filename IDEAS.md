@@ -33,7 +33,7 @@ decided in MASTER_PLAN.
   doubles as the base for the SaaS/multi-user direction). Backfill embeddings for existing
   rows. Read path likely exposed to Claude via a small MCP server (vector-search endpoint)
   rather than the Drive MCP reading the whole Sheet.
-- **A2** [feature] Virtual secretary actions — bot auto-operates in a chat: takes notes,
+- **A2** [feature] [planned] Virtual secretary actions — bot auto-operates in a chat: takes notes,
   summarizes, creates calendar events, sets important reminders. Feeds context to
   GPT/Claude to continue brainstorming. Uses a system-default API key; auto-selects model
   by problem complexity. (The original vision; A1 is the retrieval foundation it needs.)
