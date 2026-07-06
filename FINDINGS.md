@@ -5,6 +5,26 @@ Append newest at the top. Each entry: **what**, **why it matters**, **so do this
 
 ---
 
+## Sheet append is required; Neon embed is best-effort (M4)
+- **What:** In the webhook, `appendLog()` to the Sheet is the required write path. The Neon embed + insert runs in its own try/catch immediately after — a failure is logged and swallowed; it never blocks the Sheet write or the 200 response.
+- **Why it matters:** The Sheet is the free-tier human-readable ledger that must stay alive even when OpenAI or Neon is down. Coupling the required path to the best-effort path would cause Telegram retries whenever the embedding service hiccups.
+- **So do this:** Never move the Neon step outside its best-effort try/catch, and never make `appendLog()` depend on a successful embed.
+
+## `@neondatabase/serverless` chosen over raw `pg` for Vercel serverless
+- **What:** `lib/db.js` uses `neon()` from `@neondatabase/serverless` (HTTP/WebSocket Postgres) rather than the standard `pg` package.
+- **Why it matters:** Standard `pg` uses TCP connections which conflict with Vercel's serverless connection limits. The Neon HTTP driver makes a fresh HTTPS request per query — no connection pool exhaustion under concurrent invocations.
+- **So do this:** Keep `@neondatabase/serverless` as the driver. Don't swap in `pg` or `postgres` (node-postgres).
+
+## Embedding cost is negligible; embed per message, not per session
+- **What:** OpenAI `text-embedding-3-small` costs ~$0.02 / 1M tokens, which is ~$0.40 per 1M messages at typical chat-message lengths.
+- **Why it matters:** Session-level chunking (IDEAS S1) is a future optimization — it's not needed to keep costs under control at the volumes this project targets.
+- **So do this:** Embed every message individually (current approach). Don't add batching complexity until volume actually demands it.
+
+## `owner_id` is stamped on every row from day one (M4 / IDEAS S7)
+- **What:** Every `messages` row carries an `owner_id` column, defaulted from the `OWNER_ID` env var. All reads (search) are filtered by `owner_id`.
+- **Why it matters:** Adding multi-user isolation as a retrofit after rows are already in the table would require a migration and backfill. Baking it in now makes the SaaS path (C1–C3) a configuration change, not a schema change.
+- **So do this:** Always set `owner_id` in `insertMessage()` and always filter by it in `searchMessages()`. Don't skip it even in single-user mode.
+
 ## Webhook must return 200 even on internal errors
 - **What:** Telegram retries delivery on any non-2xx response.
 - **Why it matters:** If a Sheets write fails and we return 500, Telegram re-sends the

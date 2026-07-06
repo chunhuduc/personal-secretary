@@ -91,4 +91,54 @@ function fakeRes() {
   console.log('[ok] valid secret + no message -> 200 ignored');
 }
 
-console.log('\nAll sanity checks passed. (Full Sheets network path needs real credentials to verify - see README verification steps.)');
+// 5. Confirm lib/embeddings.js throws a clear error without OPENAI_API_KEY
+// (guard: unset it if the shell happened to have it set)
+const savedOpenAI = process.env.OPENAI_API_KEY;
+delete process.env.OPENAI_API_KEY;
+// Re-import so the cached client is fresh for this assertion
+const embedModule = await import('../lib/embeddings.js?sanity=1');
+try {
+  await embedModule.embed('hello');
+  throw new Error('expected embed() to throw without OPENAI_API_KEY');
+} catch (err) {
+  assert.match(err.message, /OPENAI_API_KEY/);
+  console.log('[ok] embed() throws clear error without OPENAI_API_KEY');
+}
+if (savedOpenAI) process.env.OPENAI_API_KEY = savedOpenAI;
+
+// 6. Confirm lib/db.js throws a clear error without DATABASE_URL
+const savedDbUrl = process.env.DATABASE_URL;
+delete process.env.DATABASE_URL;
+const dbModule = await import('../lib/db.js?sanity=1');
+try {
+  await dbModule.searchMessages({ ownerId: 'x', queryEmbedding: [], k: 1 });
+  throw new Error('expected searchMessages() to throw without DATABASE_URL');
+} catch (err) {
+  assert.match(err.message, /DATABASE_URL/);
+  console.log('[ok] searchMessages() throws clear error without DATABASE_URL');
+}
+if (savedDbUrl) process.env.DATABASE_URL = savedDbUrl;
+
+// 7. api/search.js returns 401 without the X-Search-Secret header
+// (import without the secret set so we can test 401 cleanly)
+delete process.env.SEARCH_SECRET;
+const { default: searchHandler } = await import('../api/search.js?sanity=1');
+
+{
+  const res = fakeRes();
+  await searchHandler({ method: 'POST', headers: {}, body: { query: 'test' } }, res);
+  assert.equal(res.statusCode, 401);
+  console.log('[ok] search endpoint rejects request with missing secret (401)');
+}
+
+{
+  const res = fakeRes();
+  await searchHandler(
+    { method: 'POST', headers: { 'x-search-secret': 'wrong' }, body: { query: 'test' } },
+    res
+  );
+  assert.equal(res.statusCode, 401);
+  console.log('[ok] search endpoint rejects request with wrong secret (401)');
+}
+
+console.log('\nAll sanity checks passed. (Full Sheets / Neon / OpenAI network paths need real credentials to verify - see README verification steps.)');

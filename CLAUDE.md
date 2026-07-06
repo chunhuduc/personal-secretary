@@ -49,10 +49,12 @@ leave it as a record — don't let stale plans silently drift from `MASTER_PLAN.
   Control scope by adding/removing the bot in Telegram, not in code. (Presence-based
   scoping is Telegram-specific — a source that can't gate by membership, e.g. email,
   may need its own mechanism. Don't assume it generalizes.)
-- **No separate DB — the Sheet is the store.** *Pending change:* `plans/rag-semantic-retrieval.md`
-  (DRAFT, not started) proposes adding Neon/pgvector as a best-effort machine-retrieval
-  index alongside the Sheet. Until that plan is executed, this invariant still holds as
-  written; update it here once M4 (see `MASTER_PLAN.md`) actually starts.
+- **The Sheet is the ledger; Neon is the retrieval index.** Both are always written on
+  each webhook: `appendLog()` to the Sheet is **required** (unchanged, atomic, no
+  read-modify-write race); embed + INSERT into Neon is **best-effort** in its own
+  try/catch and must never block the Sheet write or the 200 response. Every `messages`
+  row carries `owner_id` (stamped from `OWNER_ID` env) for future multi-user isolation.
+  See `FINDINGS.md` for the rationale and `@neondatabase/serverless` driver choice.
 
 ## Log row shape (`log` tab)
 
@@ -65,11 +67,14 @@ leave it as a record — don't let stale plans silently drift from `MASTER_PLAN.
   it in sync when you add an env var.
 - Match the existing comment density and naming; the two source files are the style
   reference.
-- **Postgres/Neon schema + migrations go through Drizzle** (`drizzle-orm` + `drizzle-kit`)
-  — see `MASTER_PLAN.md` M4 "Migration tool decision". Define tables in `lib/schema.js`,
-  generate migrations with `drizzle-kit generate`, apply with `drizzle-kit migrate`. Never
-  hand-write `CREATE TABLE`/`ALTER TABLE` SQL outside a generated migration (enabling the
-  `pgvector` extension is the one manual exception — see `scripts/init-neon.md`).
+- **Neon query layer uses Drizzle ORM** on top of the `@neondatabase/serverless` HTTP
+  driver. The `messages` table is defined once in `lib/schema.js` (the source of truth);
+  `lib/db.js` builds a cached Drizzle client and exposes `insertMessage` / `searchMessages`.
+  Semantic search uses Drizzle's `cosineDistance` helper. Schema changes flow through
+  drizzle-kit migrations, never hand-written DDL: edit `lib/schema.js`, then
+  `npm run db:generate` (writes SQL into `drizzle/`) and `npm run db:migrate` (applies it).
+  The one manual step is `CREATE EXTENSION vector`, done once before the first migration.
+  See `scripts/init-neon.md` for setup and `FINDINGS.md` for the driver rationale.
 
 ## Commands
 

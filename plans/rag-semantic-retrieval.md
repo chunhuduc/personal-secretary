@@ -1,6 +1,11 @@
 # Plan — M4: Semantic retrieval / RAG over the message log (IDEAS A1)
 
-> Status: DRAFT — to be revised before implementation. Not started.
+> Status: IMPLEMENTED — merged in PR #1, then completed on Drizzle as originally
+> specified. The Neon schema lives in `lib/schema.js`, `lib/db.js` is the Drizzle query
+> layer (`neon-http` adapter, `cosineDistance` search), and migrations run via
+> `drizzle-kit generate`/`migrate` (see `scripts/init-neon.md`). The `messages` table,
+> `vector(1536)` column, and both indexes are applied and verified on Neon. Remaining work
+> is the Sheet backfill + live search verification — see the end of this file.
 
 ## Context — why this change
 

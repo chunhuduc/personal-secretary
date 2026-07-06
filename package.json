@@ -8,12 +8,19 @@
     "node": ">=20"
   },
   "scripts": {
-    "sanity": "node scripts/sanity-check.js"
+    "sanity": "node scripts/sanity-check.js",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "backfill": "node scripts/backfill-embeddings.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@neondatabase/serverless": "^0.10.0",
+    "drizzle-orm": "^0.45.2",
     "googleapis": "^144.0.0",
     "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10"
   }
 }
