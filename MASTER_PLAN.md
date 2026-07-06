@@ -13,10 +13,11 @@ The original foundation still holds: a reusable **messaging-source → store →
 pipeline. Telegram is the first leg; the shape is meant to be copied for future sources
 (Zalo, a second email, Slack).
 
-## Current status — as of 2026-07-06
+## Current status — as of 2026-07-07
 
-**Phase: M1 (Telegram leg) live. M4 (semantic retrieval / RAG) in progress —
-foundation in PR #1 (`m4/semantic-retrieval`). M5 (secretary actions, A2) planned.**
+**Phase: M1 (Telegram leg) live. M4 (semantic retrieval / RAG) done — foundation
+merged in PR #1, Drizzle migration + backfill + live verification landed after.
+M5 (secretary actions, A2) planned; M6 (multi-tenant bot registry) drafted.**
 
 - [x] GCP project `personal-secretary-501607` + service account
       `vera-secretary@personal-secretary-501607.iam.gserviceaccount.com`
@@ -28,8 +29,9 @@ foundation in PR #1 (`m4/semantic-retrieval`). M5 (secretary actions, A2) planne
 - [x] Webhook registered against the deployed URL
 - [x] End-to-end test: Telegram message → row lands in the `log` tab
 - [x] Claude can read the Sheet via the Google Drive MCP
-- [~] M4 semantic retrieval — foundation written, in PR #1; backfill, Drizzle
-      migration, and live verification still outstanding (see `plans/rag-semantic-retrieval.md`)
+- [x] M4 semantic retrieval — schema on Neon (Drizzle-managed), webhook self-indexes
+      new messages best-effort, 55 Sheet rows backfilled with 0 errors, live semantic
+      search verified end to end (see `plans/rag-semantic-retrieval.md`)
 
 ## Milestones
 
@@ -48,35 +50,36 @@ Superseded: the "keep Sheet retrieval fast as it grows" concern is answered by m
 machine-retrieval to a vector index (M4). Session chunking / summary index (IDEAS S1)
 stays a later refinement on top of M4.
 
-### M4 — Semantic retrieval / RAG (in progress — foundation in PR #1)
+### M4 — Semantic retrieval / RAG (done)
 Make the bot genuinely useful for personal use: stop stuffing the whole log into context;
 embed each message and retrieve only the top-K relevant ones per query. This is IDEAS
 **A1** and the technical foundation for A2 (secretary actions), B1 (proactive voice), and
 suggested S5/S6.
 
-- **Store decision (made):** add **Neon** (serverless Postgres + pgvector). Free tier
+- **Store decision (made):** added **Neon** (serverless Postgres + pgvector). Free tier
   with no time limit, good Vercel fit, and the base for the later multi-user/SaaS work
   (C1–C3, D1). This **overrides the "no separate DB" invariant** below — Sheet stays as
-  the human-readable ledger, Neon becomes the machine-retrieval index.
+  the human-readable ledger, Neon is the machine-retrieval index.
 - **Migration tool decision (made):** **Drizzle** (`drizzle-orm` + `drizzle-kit`) manages
-  the Neon schema and all future migrations — no hand-written SQL DDL beyond enabling the
-  `pgvector` extension once. `drizzle-orm` has native pgvector support (`vector()` column
-  type, `cosineDistance()`/`l2Distance()` SQL helpers), so the query layer in `lib/db.js`
-  is Drizzle too, not raw `@neondatabase/serverless` tagged templates. Applies to any
-  future Postgres table, not just `messages`.
-- **Scope (high level; detailed plan — currently DRAFT — in
-  `plans/rag-semantic-retrieval.md`):**
+  the Neon schema and all migrations — no hand-written SQL DDL beyond enabling the
+  `pgvector` extension once. `lib/schema.js` is the single source of truth for the
+  `messages` table; the query layer in `lib/db.js` uses Drizzle's `neon-http` client and
+  `cosineDistance()` for search. Applies to any future Postgres table, not just `messages`.
+- **Shipped (see `plans/rag-semantic-retrieval.md` for the full record):**
   1. Neon schema: `messages(id, owner_id, chat_id, chat_name, sender, text, ts,
-     raw_date_unix, embedding vector)`.
-  2. Write path: on each webhook, `appendLog()` to Sheet stays **required** (unchanged,
-     free-tier sync must not depend on the rest); embed + INSERT into Neon is
-     **best-effort** in its own try/catch — a Neon/OpenAI failure never blocks the Sheet
-     write or the 200 response.
-  3. Backfill: one-off script to embed existing Sheet rows into Neon.
-  4. Read path: embed the query, `ORDER BY embedding <=> q LIMIT K` (pgvector cosine).
-  5. Expose to Claude via a small MCP vector-search server (not Drive-MCP-reads-whole-Sheet).
-- **Bake in early (from IDEAS S7):** tag every row/vector with an owner/tenant id now, so
-  multi-user isolation later isn't a painful retrofit.
+     raw_date_unix, embedding vector(1536))` + HNSW cosine index + owner/chat/ts btree.
+  2. Write path: on each webhook, `appendLog()` to Sheet stays **required**; embed +
+     INSERT into Neon is **best-effort** in its own try/catch — a Neon/OpenAI failure
+     never blocks the Sheet write or the 200 response.
+  3. Backfill: `scripts/backfill-embeddings.js` embedded all 55 existing Sheet rows into
+     Neon with 0 errors.
+  4. Read path: `api/search.js` embeds the query and calls `searchMessages()`
+     (pgvector cosine, `ORDER BY embedding <=> q LIMIT K`).
+  5. Exposed to Claude via `mcp/search-server.js`, a small MCP vector-search server (not
+     Drive-MCP-reads-whole-Sheet). Live semantic search verified end to end — a
+     `computer-broken` query returned mouse/card/computer rows sharing no keywords.
+- **Baked in early (from IDEAS S7):** every row carries `owner_id` (from `OWNER_ID` env),
+  so multi-user isolation later isn't a painful retrofit.
 
 ### M5 — Secretary actions (planned — IDEAS A2)
 Make the bot *act*, not just log: take notes, summarize, set reminders, and (stretch)
@@ -92,6 +95,13 @@ outbound Telegram messages. Detailed plan (DRAFT) in `plans/secretary-actions.md
   blocking the required Sheet write or the always-200 response.
 - **Shared infra built here:** `lib/telegram.js` send-back path (reused by S5/S6),
   `lib/llm.js` Claude client with a complexity-based model router.
+
+### M6 — Multi-tenant / bot registry (drafted — IDEAS C1 + C2 + D1)
+Pulled ahead of M5 because a friend wants their own secretary now. Operator-provisioned
+bot registry so multiple Telegram bots, each with its own owner and isolated data, can be
+added/assigned/disabled without a redeploy per bot. Neon already stamps `owner_id` on
+every row (S7); this adds the routing registry and a provisioning CLI. Detailed plan
+(DRAFT) in `plans/multi-tenant-bot-registry.md`.
 
 ## Open questions / decisions to make
 
@@ -109,5 +119,5 @@ outbound Telegram messages. Detailed plan (DRAFT) in `plans/secretary-actions.md
 - No admin commands / whitelist tab (deliberately removed; see git history).
 - ~~No separate DB — the Sheet is the store.~~ **Reversed at M4:** Neon (Postgres +
   pgvector) is added as the machine-retrieval index. The Sheet remains the human-readable
-  ledger and the atomic-append write target; it is no longer the *only* store. Update
-  `CLAUDE.md`'s invariant when M4 starts.
+  ledger and the atomic-append write target; it is no longer the *only* store.
+  `CLAUDE.md`'s invariant is updated to match.
