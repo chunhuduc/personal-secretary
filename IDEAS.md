@@ -12,7 +12,9 @@ Tags (optional): `[feature]` `[fix]` `[refactor]` `[infra]` `[question]` `[wild]
 
 ## Inbox
 
-- 
+1. [feature] Virtual secretary bot — add to any chat, auto-operates: takes notes, summarizes, creates calendar events, sets important reminders. Provides context to GPT/Claude for brainstorming continuation. Use OpenAI API key (system-default), auto-select model based on problem complexity.
+2. [feature] Multi-user + admin controls — support multiple users (friends, teammates), not just personal use. One bot per user (1:1); admin (you) manages: user whitelist, bot instances, permissions, usage limits.
+
 
 ---
 

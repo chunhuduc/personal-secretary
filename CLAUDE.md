@@ -22,9 +22,16 @@ first, then Zalo / a second email / Slack) into a Sheet Claude can search.
 | `WORKFLOW.md` | Step-by-step operational flows (deploy, add a source, rotate secrets) | A flow changes or a new one is needed |
 | `IDEAS.md` | Quick idea capture; triaged into `MASTER_PLAN.md` later | Anytime — dump ideas, triage later |
 | `WORKSPACE_CONTEXT.md` | The reusable cross-source pattern & rationale | The pattern itself evolves |
+| `plans/` | Detailed implementation plans (from planning mode or ad-hoc) | A non-trivial plan is produced — save it here, not outside the workspace |
 
 **Before extending to a new message source, read `WORKSPACE_CONTEXT.md` and
 `WORKFLOW.md` first** — don't reinvent the pipeline per source.
+
+## Plans
+
+Detailed plans (from `/plan` or any planning task) go in `plans/`, never outside the
+workspace. Use `plans/<short-topic>.md`; once a plan is executed, either delete it or
+leave it as a record — don't let stale plans silently drift from `MASTER_PLAN.md`.
 
 ## Architecture invariants — do not break
 
