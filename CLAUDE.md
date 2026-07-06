@@ -20,6 +20,7 @@ first, then Zalo / a second email / Slack) into a Sheet Claude can search.
 | `MASTER_PLAN.md` | Roadmap, milestones, current status | A milestone starts/finishes |
 | `FINDINGS.md` | Hard-won facts (gotchas, quirks) so we don't re-learn them | You discover something non-obvious |
 | `WORKFLOW.md` | Step-by-step operational flows (deploy, add a source, rotate secrets) | A flow changes or a new one is needed |
+| `IDEAS.md` | Quick idea capture; triaged into `MASTER_PLAN.md` later | Anytime — dump ideas, triage later |
 | `WORKSPACE_CONTEXT.md` | The reusable cross-source pattern & rationale | The pattern itself evolves |
 
 **Before extending to a new message source, read `WORKSPACE_CONTEXT.md` and
