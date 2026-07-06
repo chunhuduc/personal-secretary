@@ -49,6 +49,10 @@ leave it as a record — don't let stale plans silently drift from `MASTER_PLAN.
   Control scope by adding/removing the bot in Telegram, not in code. (Presence-based
   scoping is Telegram-specific — a source that can't gate by membership, e.g. email,
   may need its own mechanism. Don't assume it generalizes.)
+- **No separate DB — the Sheet is the store.** *Pending change:* `plans/rag-semantic-retrieval.md`
+  (DRAFT, not started) proposes adding Neon/pgvector as a best-effort machine-retrieval
+  index alongside the Sheet. Until that plan is executed, this invariant still holds as
+  written; update it here once M4 (see `MASTER_PLAN.md`) actually starts.
 
 ## Log row shape (`log` tab)
 
