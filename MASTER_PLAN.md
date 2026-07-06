@@ -15,8 +15,8 @@ pipeline. Telegram is the first leg; the shape is meant to be copied for future 
 
 ## Current status — as of 2026-07-06
 
-**Phase: Telegram leg built locally, not yet deployed. Next feature after go-live:
-semantic retrieval (RAG) — see M4.**
+**Phase: M1 (Telegram leg) live. M4 (semantic retrieval / RAG) in progress —
+foundation in PR #1 (`m4/semantic-retrieval`). M5 (secretary actions, A2) planned.**
 
 - [x] GCP project `personal-secretary-501607` + service account
       `vera-secretary@personal-secretary-501607.iam.gserviceaccount.com`
@@ -24,16 +24,18 @@ semantic retrieval (RAG) — see M4.**
       headers set, shared with the service account as Editor
 - [x] `.env` fully populated (bot token, webhook secret, service-account JSON b64, sheet id)
 - [x] Code written and sanity-checked locally (`npm run sanity`)
-- [ ] **NEXT: `vercel deploy`** with the 4 env vars set in the Vercel project
-- [ ] Register webhook: run `scripts/set-webhook.ps1` (or `.sh`) against the deployed URL
-- [ ] End-to-end test: send a Telegram message → confirm a row lands in the `log` tab
-- [ ] Confirm Claude can read the Sheet via the Google Drive MCP
+- [x] `vercel deploy` with the env vars set in the Vercel project
+- [x] Webhook registered against the deployed URL
+- [x] End-to-end test: Telegram message → row lands in the `log` tab
+- [x] Claude can read the Sheet via the Google Drive MCP
+- [~] M4 semantic retrieval — foundation written, in PR #1; backfill, Drizzle
+      migration, and live verification still outstanding (see `plans/rag-semantic-retrieval.md`)
 
 ## Milestones
 
-### M1 — Telegram leg live (in progress)
-Deploy to Vercel, register the webhook, verify a real message reaches the Sheet, and
-verify Claude can query it. See `WORKFLOW.md → Deploy & register webhook`.
+### M1 — Telegram leg live (done)
+Deployed to Vercel, webhook registered, a real message verified reaching the Sheet, and
+Claude confirmed reading it. See `WORKFLOW.md → Deploy & register webhook`.
 
 ### M2 — Second source (not started)
 Add one more source to prove the pattern generalizes. Candidate: a second email account
@@ -46,7 +48,7 @@ Superseded: the "keep Sheet retrieval fast as it grows" concern is answered by m
 machine-retrieval to a vector index (M4). Session chunking / summary index (IDEAS S1)
 stays a later refinement on top of M4.
 
-### M4 — Semantic retrieval / RAG (NEXT — chosen to plan now)
+### M4 — Semantic retrieval / RAG (in progress — foundation in PR #1)
 Make the bot genuinely useful for personal use: stop stuffing the whole log into context;
 embed each message and retrieve only the top-K relevant ones per query. This is IDEAS
 **A1** and the technical foundation for A2 (secretary actions), B1 (proactive voice), and
@@ -75,6 +77,21 @@ suggested S5/S6.
   5. Expose to Claude via a small MCP vector-search server (not Drive-MCP-reads-whole-Sheet).
 - **Bake in early (from IDEAS S7):** tag every row/vector with an owner/tenant id now, so
   multi-user isolation later isn't a painful retrofit.
+
+### M5 — Secretary actions (planned — IDEAS A2)
+Make the bot *act*, not just log: take notes, summarize, set reminders, and (stretch)
+create calendar events, feeding relevant history (via M4 retrieval) into an LLM. This is
+the original product vision and introduces the first server-side LLM calls and the first
+outbound Telegram messages. Detailed plan (DRAFT) in `plans/secretary-actions.md`.
+
+- **Phase 1 (MVP):** command-triggered actions (`/summarize`, `/note`, `/todo`, `/act`)
+  — deterministic, cheap, no per-message LLM cost.
+- **Phase 2:** proactive/auto actions behind a cheap "is this actionable?" gate (shares
+  B1's "worth interrupting?" logic + the send-back path).
+- **Reuses the M4 discipline:** actions are best-effort in their own try/catch, never
+  blocking the required Sheet write or the always-200 response.
+- **Shared infra built here:** `lib/telegram.js` send-back path (reused by S5/S6),
+  `lib/llm.js` Claude client with a complexity-based model router.
 
 ## Open questions / decisions to make
 
