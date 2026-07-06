@@ -2,16 +2,17 @@
 
 Telegram → Vercel webhook → Google Sheets log, read by Claude via the Google Drive MCP.
 
-A Telegram bot is added to specific chats. Every new message in a whitelisted chat is
-forwarded to a Vercel serverless function, which appends it as a row to a Google Sheet.
-Claude / Claude Code can then read and query that Sheet through the Google Drive MCP
-whenever it needs to consult the message log.
+A Telegram bot logs every message from every chat it's currently a member of. Scope is
+controlled by adding or removing the bot from a chat in Telegram itself — there's no
+separate whitelist. Each message is forwarded to a Vercel serverless function, which
+appends it as a row to a Google Sheet. Claude / Claude Code can then read and query
+that Sheet through the Google Drive MCP whenever it needs to consult the message log.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    TG["Telegram Bot<br/>(privacy OFF, in whitelisted chats)"]
+    TG["Telegram Bot<br/>(privacy OFF)"]
     TG -- "setWebhook (secret_token)" --> WH
 
     subgraph Vercel["Vercel /api/telegram-webhook (Node.js, googleapis JWT)"]
@@ -19,20 +20,12 @@ flowchart TD
         VERIFY{"Valid<br/>X-Telegram-Bot-Api-<br/>Secret-Token?"}
         WH --> VERIFY
         VERIFY -- "no" --> R401["401 Unauthorized"]
-        VERIFY -- "yes" --> READCFG["Read 'config' tab whitelist"]
-        READCFG --> BRANCH{"Message type?"}
-        BRANCH -- "admin control cmd<br/>(/allow /deny /list)" --> MUTATE["Mutate 'config' tab"]
-        BRANCH -- "whitelisted chat" --> APPEND["Append row to 'log' tab"]
-        BRANCH -- "not whitelisted" --> IGNORE["Ignore"]
-        MUTATE --> OK["200 OK"]
-        APPEND --> OK
-        IGNORE --> OK
+        VERIFY -- "yes" --> APPEND["Append row to 'log' tab"]
+        APPEND --> OK["200 OK"]
     end
 
     APPEND --> SHEET
-    MUTATE --> SHEET
-
-    SHEET["Google Sheet<br/>log tab + config tab"]
+    SHEET["Google Sheet<br/>log tab"]
     SHEET --> CLAUDE["Claude / Claude Code<br/>reads via Google Drive MCP<br/>(read_file_content / search_files)"]
 ```
 
@@ -44,8 +37,8 @@ flowchart TD
    prompts → copy the token into `.env` as `TELEGRAM_BOT_TOKEN`.
 2. Still with BotFather: `/setprivacy` → select your bot → **Disable**.
    This lets the bot read every message in a group, not just commands addressed to it.
-3. Add the bot to the group/chat you want logged. It only sees messages sent *after*
-   it joins — no history backfill.
+3. Add the bot to any chat you want logged; remove it from a chat to stop logging it.
+   It only sees messages sent *after* it joins — no history backfill.
 
 ### 2. Google Cloud service account
 
@@ -65,27 +58,23 @@ flowchart TD
 
 ### 3. Google Sheet
 
-Follow [scripts/init-sheet.md](scripts/init-sheet.md): create the Sheet, add the `log`
-and `config` tabs with headers, share the Sheet with the service account's email as
-**Editor**, and copy the Sheet ID into `.env` as `SHEET_ID`.
+Follow [scripts/init-sheet.md](scripts/init-sheet.md): create the Sheet with a `log`
+tab and headers, share the Sheet with the service account's email as **Editor**, and
+copy the Sheet ID into `.env` as `SHEET_ID`.
 
 ### 4. Environment variables
 
-Copy `.env.example` to `.env` and fill in all five values:
+Copy `.env.example` to `.env` and fill in all four values:
 
 ```
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_WEBHOOK_SECRET=
 GOOGLE_SERVICE_ACCOUNT_JSON=
 SHEET_ID=
-ADMIN_CHAT_IDS=
 ```
 
 `TELEGRAM_WEBHOOK_SECRET` is any random string you invent (e.g.
-`openssl rand -hex 24`). `ADMIN_CHAT_IDS` is your own Telegram chat_id (DM the bot,
-send anything, check the `log` tab isn't written since you're not whitelisted yet —
-use `/getUpdates` on the Bot API, or just message the bot and check the Vercel function
-logs for the incoming `chat.id`).
+`openssl rand -hex 24`).
 
 ### 5. Deploy to Vercel
 
@@ -94,7 +83,7 @@ npm install
 vercel deploy        # or: vercel --prod
 ```
 
-Then, in the Vercel project settings, add the same 5 environment variables from
+Then, in the Vercel project settings, add the same 4 environment variables from
 `.env`, and redeploy so the function picks them up.
 
 ### 6. Register the webhook
@@ -117,41 +106,26 @@ $env:TELEGRAM_WEBHOOK_SECRET = "..."
 Both scripts print `getWebhookInfo` afterward — confirm `url` is set and there's no
 `last_error_message`.
 
-### 7. Whitelist a chat
-
-Control commands only work from a chat_id listed in `ADMIN_CHAT_IDS`. From that chat,
-message the bot directly:
-
-- `/list` — show currently whitelisted chats
-- `/allow <chat_id> [name]` — whitelist a chat (find the chat_id via `/list`,
-  `getUpdates`, or Vercel function logs the first time a message arrives)
-- `/deny <chat_id>` — remove a chat from the whitelist
-
-Changes take effect immediately — no redeploy, since the webhook reads the `config`
-tab fresh on every message.
-
 ## Verifying it works end to end
 
 1. `getWebhookInfo` (via the setup script, or directly) shows the deployed URL with no
    `last_error_message`.
-2. `/allow <chat_id>` from an admin chat gets an ACK reply and a new/updated row in
-   `config`.
-3. A normal message sent in that whitelisted chat shows up as a new row in `log`
-   within a few seconds.
-4. A message from a non-whitelisted chat produces **no** row (silently ignored).
-5. From Claude, use the Google Drive MCP (`search_files` to locate the Sheet, then
+2. Add the bot to a chat, send a message — it shows up as a new row in `log` within a
+   few seconds.
+3. Remove the bot from that chat, send another message elsewhere it isn't a member of
+   — nothing gets logged (it never receives the update).
+4. From Claude, use the Google Drive MCP (`search_files` to locate the Sheet, then
    `read_file_content`) to read back the log.
-6. POSTing to `/api/telegram-webhook` without the secret header returns 401.
+5. POSTing to `/api/telegram-webhook` without the secret header returns 401.
 
 ## Repo layout
 
 | Path | Purpose |
 |---|---|
 | `api/telegram-webhook.js` | The serverless function handling all webhook logic |
-| `lib/sheets.js` | Google Sheets client, log append, whitelist read/write |
-| `lib/telegram.js` | Sends ACK replies for control commands |
+| `lib/sheets.js` | Google Sheets client, log append |
 | `scripts/set-webhook.sh` / `.ps1` | Registers the webhook with Telegram after deploy |
-| `scripts/init-sheet.md` | Manual steps to create the Sheet + tabs |
+| `scripts/init-sheet.md` | Manual steps to create the Sheet + tab |
 | `.env.example` | All required environment variables, documented |
 
 See also [WORKSPACE_CONTEXT.md](WORKSPACE_CONTEXT.md) for the reusable pattern this

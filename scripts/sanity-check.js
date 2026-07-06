@@ -1,39 +1,36 @@
 // Local sanity check - exercises pure logic without real Google/Telegram
 // credentials. Not a full e2e test (that requires live creds + deploy),
-// but catches import errors and logic bugs in message parsing / whitelist
-// gating before deploying.
+// but catches import errors and logic bugs in request validation before
+// deploying.
 
 import assert from 'node:assert/strict';
 
 process.env.TELEGRAM_WEBHOOK_SECRET = 'test-secret';
-process.env.ADMIN_CHAT_IDS = '111,222';
-process.env.TELEGRAM_BOT_TOKEN = 'dummy-token';
 // Deliberately NOT setting GOOGLE_SERVICE_ACCOUNT_JSON / SHEET_ID here -
 // getSheetsClient() should throw a clear error if called, which we verify
 // separately rather than letting import-time code touch the network.
 
-const { appendLog, getWhitelist, upsertConfig, getConfigRows } = await import('../lib/sheets.js');
-const { sendMessage } = await import('../lib/telegram.js');
+const { appendLog } = await import('../lib/sheets.js');
 
 // 1. Confirm sheets.js throws a clear, actionable error without creds
 // (rather than a cryptic network/undefined error).
 try {
-  await getWhitelist();
-  throw new Error('expected getWhitelist to throw without GOOGLE_SERVICE_ACCOUNT_JSON');
+  await appendLog({
+    timestampIso: new Date().toISOString(),
+    chatId: 1,
+    chatName: 'test',
+    sender: 'test',
+    text: 'test',
+    rawDateUnix: 0,
+  });
+  throw new Error('expected appendLog to throw without GOOGLE_SERVICE_ACCOUNT_JSON');
 } catch (err) {
   assert.match(err.message, /GOOGLE_SERVICE_ACCOUNT_JSON/);
-  console.log('[ok] getWhitelist throws clear error without service-account env var');
+  console.log('[ok] appendLog throws clear error without service-account env var');
 }
 
-// 2. sendMessage should not throw even if the Telegram API call fails
-// (dummy token) - it should log and swallow, per the "never block 200" design.
-await sendMessage(123, 'test message');
-console.log('[ok] sendMessage swallows Telegram API failures without throwing');
-
-// 3. Exercise the webhook handler's pure logic paths using fetch mocked out
-// - import handler and simulate req/res without hitting real Sheets.
-// Since appendLog/getWhitelist need real creds, we only test the
-// request-shape validation (method + secret header) here.
+// 2. Exercise the webhook handler's request-shape validation (method +
+// secret header) without hitting real Sheets.
 const { default: handler } = await import('../api/telegram-webhook.js');
 
 function fakeRes() {
@@ -94,4 +91,4 @@ function fakeRes() {
   console.log('[ok] valid secret + no message -> 200 ignored');
 }
 
-console.log('\nAll sanity checks passed. (Full Sheets/Telegram network paths need real credentials to verify - see README verification steps.)');
+console.log('\nAll sanity checks passed. (Full Sheets network path needs real credentials to verify - see README verification steps.)');

@@ -1,6 +1,6 @@
 # Sheet setup
 
-One Google Sheet, two tabs.
+One Google Sheet, one tab.
 
 ## 1. Create the Sheet
 
@@ -11,25 +11,13 @@ One Google Sheet, two tabs.
 
 ## 2. Create the `log` tab
 
-Rename the default first tab (or add a new one) to exactly `log`, then set row 1 headers:
+Rename the default first tab to exactly `log`, then set row 1 headers:
 
 | A | B | C | D | E | F |
 |---|---|---|---|---|---|
 | timestamp_iso | chat_id | chat_name | sender | text | raw_date_unix |
 
-## 3. Create the `config` tab
-
-Add a second tab named exactly `config`, with row 1 headers:
-
-| A | B | C |
-|---|---|---|
-| chat_id | chat_name | enabled |
-
-You can leave this empty below the header — chats get added via the `/allow` Telegram
-command once the bot is live. You may also seed it manually (put `TRUE`/`FALSE` in
-column C) if you already know the chat_id.
-
-## 4. Share with the service account
+## 3. Share with the service account
 
 1. Create the service account first (see main README).
 2. Click **Share** on the Sheet → paste the service account's email

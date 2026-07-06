@@ -17,11 +17,16 @@ rather than inventing a new pipeline per source.
 - Google Drive MCP can read Sheets directly (`search_files` + `read_file_content`),
   so no separate integration is needed on the Claude side.
 
-### Two-tab shape
+### Single-tab shape, presence-based scope
 
 - `log` — one row per message: `timestamp_iso | chat_id | chat_name | sender | text | raw_date_unix`
-- `config` — whitelist of source IDs to actually log:
-  `chat_id | chat_name | enabled`
+
+There is no whitelist/config tab. Scope is controlled by adding or removing the bot
+from a chat directly in Telegram — if the bot is a member, its messages get logged; if
+not, the webhook never receives them in the first place. This was a deliberate
+simplification: an earlier design had a `config` tab whitelist mutated via `/allow`
+`/deny` `/list` Telegram commands, but the user's actual workflow is "add the bot when
+I want logging, remove it when I don't" — so the whitelist layer was redundant.
 
 ### Env-var contract (per source)
 
@@ -33,24 +38,18 @@ Each new source integration should define, at minimum:
   can own multiple Sheets, or multiple tabs in one Sheet
 - `SHEET_ID` — can be one Sheet shared across sources (with a `log_<source>` tab
   naming convention) or a dedicated Sheet per source, depending on volume
-- `ADMIN_CHAT_IDS` / admin-identity equivalent — who can mutate the whitelist live
 
-### On-demand whitelist control
-
-Rather than an env var requiring redeploy, the whitelist lives in the `config` tab
-and is mutated live via control commands sent through the source itself (here:
-Telegram `/allow`, `/deny`, `/list` from an admin chat). The webhook reads the
-whitelist fresh on every request, so changes apply immediately.
+If a future source can't gate scope by "membership" the way Telegram can (e.g. email,
+where you can't easily add/remove the integration per-conversation), it may need its
+own whitelist mechanism — don't assume presence-based scoping generalizes.
 
 ### Reusing this for a new source
 
-1. Copy the `api/telegram-webhook.js` shape: verify-secret -> parse message ->
-   control-command branch -> whitelist check -> append to a `log` (sub-)tab.
+1. Copy the `api/telegram-webhook.js` shape: verify-secret -> parse message -> append
+   to a `log` (sub-)tab.
 2. Reuse `lib/sheets.js` as-is if writing into the same Sheet (add a new tab per
    source, or parameterize the tab name).
-3. Write a source-specific reply helper analogous to `lib/telegram.js` only if that
-   source supports sending an ACK back (not all do).
-4. Document the new source's env vars in `.env.example` and add its setup steps to
+3. Document the new source's env vars in `.env.example` and add its setup steps to
    `README.md`.
 
 ## Current status
