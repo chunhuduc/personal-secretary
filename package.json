@@ -11,6 +11,9 @@
     "sanity": "node scripts/sanity-check.js"
   },
   "dependencies": {
-    "googleapis": "^144.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@neondatabase/serverless": "^0.10.0",
+    "googleapis": "^144.0.0",
+    "openai": "^4.77.0"
   }
 }

@@ -31,6 +31,11 @@ S5 reminders, S6 `/ask`). It is milestone **M4** in `MASTER_PLAN.md`.
   from env for the single-user phase, so multi-user isolation later isn't a retrofit.
 - **This reverses the CLAUDE.md invariant "no separate DB — the Sheet is the store."**
   The plan updates that invariant explicitly.
+- **Migrations: Drizzle** (`drizzle-orm` + `drizzle-kit`), not hand-written SQL DDL. See
+  `MASTER_PLAN.md` M4 "Migration tool decision". `drizzle-orm` has native `pgvector`
+  support (`vector()` column type, `cosineDistance()`/`l2Distance()` SQL helpers), so it's
+  also the query layer in `lib/db.js`, not raw `@neondatabase/serverless` tagged
+  templates. Applies to any future Postgres table, not just `messages`.
 
 ## Existing code to reuse / touch
 
@@ -46,6 +51,9 @@ S5 reminders, S6 `/ask`). It is milestone **M4** in `MASTER_PLAN.md`.
   `GOOGLE_SERVICE_ACCOUNT_JSON` assertion.
 - `scripts/init-sheet.md` — style reference for a new `scripts/init-neon.md` setup guide.
 - `FINDINGS.md`, `WORKFLOW.md`, `MASTER_PLAN.md`, `CLAUDE.md` — doc updates.
+- `lib/schema.js` (new) — Drizzle schema, the source of truth for the `messages` table.
+- `drizzle.config.js` (new) — `drizzle-kit` config (`schema`, `out` migrations folder,
+  `dbCredentials.url` from `DATABASE_URL`).
 
 ## New env vars (add to `.env.example`)
 
@@ -59,8 +67,14 @@ S5 reminders, S6 `/ask`). It is milestone **M4** in `MASTER_PLAN.md`.
 ## Dependencies
 
 - `@neondatabase/serverless` — HTTP/WebSocket Postgres driver that works cleanly in Vercel
-  serverless (avoids TCP connection-limit issues). Use its tagged-template `sql` for
-  parameterized queries.
+  serverless (avoids TCP connection-limit issues). Drizzle's `neon-http` adapter sits on
+  top of this; not used directly for queries (see Drizzle below).
+- `drizzle-orm` — query layer, used via the `neon-http` adapter
+  (`drizzle-orm/neon-http`). Native `pgvector` support: `vector()` column type,
+  `cosineDistance()` / `l2Distance()` SQL helpers.
+- `drizzle-kit` (dev dependency) — generates and applies migrations from `lib/schema.js`
+  (`drizzle-kit generate` / `drizzle-kit migrate`). No hand-written DDL beyond enabling the
+  `pgvector` extension once (see step 1).
 - `openai` — official SDK for the embeddings call (or a thin `fetch` wrapper to avoid the
   dep; decide at implementation — leaning on the SDK for clarity).
 
@@ -70,24 +84,17 @@ S5 reminders, S6 `/ask`). It is milestone **M4** in `MASTER_PLAN.md`.
 
 Write a setup guide mirroring `init-sheet.md`:
 - Create a Neon project, copy the pooled `DATABASE_URL`.
-- `CREATE EXTENSION IF NOT EXISTS vector;`
-- Schema:
-  ```sql
-  CREATE TABLE messages (
-    id            bigserial PRIMARY KEY,
-    owner_id      text        NOT NULL,
-    chat_id       text        NOT NULL,
-    chat_name     text,
-    sender        text,
-    text          text        NOT NULL,
-    ts            timestamptz NOT NULL,
-    raw_date_unix bigint,
-    embedding     vector(1536)
-  );
-  CREATE INDEX ON messages USING hnsw (embedding vector_cosine_ops);
-  CREATE INDEX ON messages (owner_id, chat_id, ts);
-  ```
+- `CREATE EXTENSION IF NOT EXISTS vector;` — the one manual/superuser SQL step; everything
+  else goes through Drizzle.
+- Define the `messages` table in `lib/schema.js` (Drizzle schema, not raw SQL):
+  columns `id` (bigserial PK), `owner_id`, `chat_id`, `chat_name`, `sender`, `text`, `ts`
+  (timestamptz), `raw_date_unix`, `embedding` (`vector(1536)`); an `hnsw` index on
+  `embedding` with `vector_cosine_ops`, and a btree index on `(owner_id, chat_id, ts)`.
   (`owner_id` column + index is the S7 groundwork; RLS deferred until real multi-user.)
+- Generate the migration: `npx drizzle-kit generate` (reads `drizzle.config.js`, writes
+  SQL into the `drizzle/` folder). Apply it: `npx drizzle-kit migrate`.
+- Verify with `\d messages` in the Neon SQL editor — confirm the `vector(1536)` column
+  and both indexes exist.
 
 ### 2. `lib/embeddings.js` (new)
 
@@ -98,13 +105,18 @@ Write a setup guide mirroring `init-sheet.md`:
 
 ### 3. `lib/db.js` (new)
 
-- `getSql()` — cached Neon client from `DATABASE_URL`; clear error if unset.
+- `getDb()` — cached Drizzle client (`drizzle(process.env.DATABASE_URL)` via
+  `drizzle-orm/neon-http`); clear error if `DATABASE_URL` unset (mirrors
+  `getSheetsClient()`'s missing-env pattern).
 - `export async function insertMessage({ ownerId, chatId, chatName, sender, text, ts,
-  rawDateUnix, embedding })` — parameterized INSERT. Embedding passed as a pgvector
-  literal.
+  rawDateUnix, embedding })` — `db.insert(messages).values({...})`, embedding passed
+  straight through as `number[]` (Drizzle's `vector` column handles the pgvector literal
+  conversion).
 - `export async function searchMessages({ ownerId, queryEmbedding, k, chatId? })` —
-  `SELECT ... ORDER BY embedding <=> $q LIMIT k`, filtered by `owner_id` (and optional
-  `chat_id`). Returns rows with a similarity score. This is the single shared search core.
+  `db.select(...).from(messages).where(...).orderBy(cosineDistance(messages.embedding,
+  queryEmbedding)).limit(k)`, filtered by `owner_id` (and optional `chat_id`) via `and()`/
+  `eq()`. Returns rows with a similarity score (`1 - cosineDistance(...)` in the select
+  list). This is the single shared search core.
 
 ### 4. Wire the write path — `api/telegram-webhook.js`
 
@@ -159,8 +171,8 @@ The outer 200-always contract is untouched.
 
 - `scripts/sanity-check.js`: add offline assertions that `lib/db.js` and
   `lib/embeddings.js` throw clear errors when `DATABASE_URL` / `OPENAI_API_KEY` are unset
-  (no network), matching the existing style. Assert `api/search.js` returns 401 without
-  the secret.
+  (no network), matching the existing style — assert on the clear error message `getDb()`
+  throws, not on Drizzle internals. Assert `api/search.js` returns 401 without the secret.
 - `.env.example`: add the new vars with comments.
 - `FINDINGS.md`: new entries — Sheet append required vs. Neon embed best-effort;
   `@neondatabase/serverless` chosen for serverless connection handling; embedding cost is
@@ -174,7 +186,8 @@ The outer 200-always contract is untouched.
 ## Verification (end-to-end)
 
 1. `npm run sanity` — passes with new offline assertions (no network).
-2. Neon: run `scripts/init-neon.md` SQL; confirm `\d messages` and the vector extension.
+2. Neon: follow `scripts/init-neon.md` (enable `pgvector`, `drizzle-kit generate` +
+   `migrate`); confirm `\d messages` and the vector extension.
 3. Local write test: invoke the webhook handler (as sanity does) with a fake message +
    real `DATABASE_URL`/`OPENAI_API_KEY`; confirm a row with a non-null `embedding` lands
    in Neon, and that a **forced embed failure still returns 200** and still wrote to Sheet.

@@ -64,6 +64,34 @@ Read `WORKSPACE_CONTEXT.md` first — it holds the rationale. Then:
 
 ---
 
+## Flow: Set up Neon + run backfill (M4)
+
+1. **Create the Neon project + schema.** Follow `scripts/init-neon.md` end to end
+   (project, `pgvector` extension, `messages` table + indexes).
+2. **Set the new env vars** in `.env` (and mirror in Vercel for `api/search.js` /
+   the webhook's best-effort embed step): `DATABASE_URL`, `OPENAI_API_KEY`, `OWNER_ID`,
+   optionally `EMBEDDING_MODEL` / `SEARCH_TOP_K`, and `SEARCH_SECRET`.
+3. **Backfill existing Sheet rows:**
+   ```
+   node scripts/backfill-embeddings.js
+   ```
+   Safe to re-run - it skips rows already present in Neon.
+4. **Verify:** send a new Telegram message → confirm a row lands in both the Sheet
+   `log` tab and the Neon `messages` table (with a non-null `embedding`).
+
+## Flow: Register the search MCP server (M4)
+
+1. Ensure `DATABASE_URL`, `OPENAI_API_KEY`, and `OWNER_ID` are set in the environment
+   Claude Code runs in (its own shell env, or a `.env` loaded before launch).
+2. Register the server, e.g.:
+   ```
+   claude mcp add personal-secretary-search -- node mcp/search-server.js
+   ```
+   (Or add an equivalent entry to `.mcp.json` pointing at
+   `node mcp/search-server.js` with the same env vars available.)
+3. Ask a question that depends on chat history — confirm Claude calls
+   `search_messages` and the returned top-K messages inform the answer.
+
 ## Flow: Rotate a secret
 
 1. Generate the new value (bot token via BotFather, or a fresh random webhook secret).

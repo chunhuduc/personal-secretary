@@ -65,6 +65,11 @@ leave it as a record — don't let stale plans silently drift from `MASTER_PLAN.
   it in sync when you add an env var.
 - Match the existing comment density and naming; the two source files are the style
   reference.
+- **Postgres/Neon schema + migrations go through Drizzle** (`drizzle-orm` + `drizzle-kit`)
+  — see `MASTER_PLAN.md` M4 "Migration tool decision". Define tables in `lib/schema.js`,
+  generate migrations with `drizzle-kit generate`, apply with `drizzle-kit migrate`. Never
+  hand-write `CREATE TABLE`/`ALTER TABLE` SQL outside a generated migration (enabling the
+  `pgvector` extension is the one manual exception — see `scripts/init-neon.md`).
 
 ## Commands
 
@@ -76,3 +81,7 @@ leave it as a record — don't let stale plans silently drift from `MASTER_PLAN.
 
 - Never add a `Co-Authored-By` trailer to commits (global rule).
 - Never commit `.env`, service-account JSON, or `.vercel/`.
+- **Branch naming:** `<milestone-id>/<short-topic>`, where `<milestone-id>` is the
+  MASTER_PLAN milestone id lowercased (e.g. `m4`) and `<short-topic>` is a slug
+  summarizing the work. No milestone yet? Use a short slug in place of the id. The `/`
+  groups branches into folders in git UIs. Example: `m4/semantic-retrieval`.

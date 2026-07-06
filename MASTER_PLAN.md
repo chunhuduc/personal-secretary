@@ -56,6 +56,12 @@ suggested S5/S6.
   with no time limit, good Vercel fit, and the base for the later multi-user/SaaS work
   (C1–C3, D1). This **overrides the "no separate DB" invariant** below — Sheet stays as
   the human-readable ledger, Neon becomes the machine-retrieval index.
+- **Migration tool decision (made):** **Drizzle** (`drizzle-orm` + `drizzle-kit`) manages
+  the Neon schema and all future migrations — no hand-written SQL DDL beyond enabling the
+  `pgvector` extension once. `drizzle-orm` has native pgvector support (`vector()` column
+  type, `cosineDistance()`/`l2Distance()` SQL helpers), so the query layer in `lib/db.js`
+  is Drizzle too, not raw `@neondatabase/serverless` tagged templates. Applies to any
+  future Postgres table, not just `messages`.
 - **Scope (high level; detailed plan — currently DRAFT — in
   `plans/rag-semantic-retrieval.md`):**
   1. Neon schema: `messages(id, owner_id, chat_id, chat_name, sender, text, ts,
